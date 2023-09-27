@@ -5,9 +5,9 @@ import math
 from model import Gradient
 from model.Blocks import conv1x1, conv3x3, ResBlock
 
-class IFE(nn.Module):
+class SFE(nn.Module):
     def __init__(self, num_res_blocks, n_feats, res_scale = 1):
-        super(IFE, self).__init__()
+        super(SFE, self).__init__()
         self.num_res_blocks = num_res_blocks
         self.conv_head = conv3x3(3, n_feats)
         
@@ -30,11 +30,10 @@ class IFE(nn.Module):
 class GDE(nn.Module):
     def __init__(self, num_grad_blocks, n_feats):
         super(GDE, self).__init__()
+        self.gradient = Gradient.gradient()
         self.num_res_blocks_g = num_grad_blocks
 
-        self.IFE_GRAD       = IFE(self.num_res_blocks_g[0], n_feats)
-        self.gradient       = Gradient.gradient()
-        
+        self.SFE_GRAD    = SFE(self.num_res_blocks_g[0], n_feats)        
        
         self.conv12_grad = conv3x3(2 * n_feats, n_feats)
         self.grad_12     = nn.ModuleList()
@@ -57,9 +56,9 @@ class GDE(nn.Module):
         self.fuse_tail2 = conv1x1(n_feats//2, 3)
 
     def forward(self, x, x_tt = None, T3 = None, T2 = None, T1 = None):
-        ### shallow feature extraction
         g      = self.gradient((x + 1) * 127.5)
-        x_grad = self.IFE_GRAD(g)
+        ### shallow feature extraction
+        x_grad = self.SFE_GRAD(g)
                 
         # fuse level 1
         x_grad1 = torch.cat([x_grad, T1], dim = 1)

@@ -44,13 +44,13 @@ class SearchTransfer(nn.Module):
         K = F.unfold(refsr_lv3, kernel_size = self.search_kernel_size, 
                                     padding = self.padding_search, 
                                      stride = self.stride_search)
-        # Find correlations
-        K = K.permute(0, 2, 1)                      # [N, C*k*k,  Hr*Wr] -> [N, Hr*Wr, C*k*k]
-        K = F.normalize(K, dim = 2)                 # [N, Hr*Wr, C*k*k]
-        Q = F.normalize(Q, dim = 1)                 # [N, C*k*k, H*W]
+        # Find correlations  
+        K = K.permute(0, 2, 1)                        # [N, C*k*k,  Hr*Wr] -> [N, Hr*Wr, C*k*k]
+        K = F.normalize(K, dim = 2)                   # [N, Hr*Wr, C*k*k]
+        Q = F.normalize(Q, dim = 1)                   # [N, C*k*k, H*W]
 
-        R_lv3    = torch.bmm(K, Q) / 12                  # [N, Hr*Wr, H*W]
-        S, H_lv3 = torch.max(R_lv3, dim = 1)        # [N, H*W]
+        R_lv3    = torch.bmm(K, Q)                    # [N, Hr*Wr, H*W]
+        S, H_lv3 = torch.max(R_lv3, dim = 1)          # [N, H*W]
         
         # select normalized patches in low-resolution space
         K_ = self.bis(K.permute(0, 2, 1) , 2, H_lv3)  # [N, Hr*Wr, C*k*k] -> [N, C*k*k, H*W]

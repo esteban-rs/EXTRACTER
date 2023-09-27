@@ -9,9 +9,9 @@ from model.Blocks import conv1x1, conv3x3, ResBlock
 # thanks to
 # https://github.com/researchmm/TTSR
 
-class IFE(nn.Module):
+class SFE(nn.Module):
     def __init__(self, num_res_blocks, n_feats, res_scale = 1):
-        super(IFE, self).__init__()
+        super(SFE, self).__init__()
         self.num_res_blocks = num_res_blocks
         self.conv_head = conv3x3(3, n_feats)
         
@@ -112,7 +112,7 @@ class CSFI(nn.Module):
         self.n_feats          = n_feats
         self.top_k            = top_k
 
-        self.IFE            = IFE(self.num_res_blocks[0], n_feats)
+        self.SFE            = SFE(self.num_res_blocks[0], n_feats)
         ### stage11
         self.conv11_head = nn.ModuleList()
         for i in range(top_k):
@@ -171,7 +171,7 @@ class CSFI(nn.Module):
         
     def forward(self, x, S = None, T_lv3 = None, T_lv2 = None, T_lv1 = None):
         ### shallow feature extraction
-        x = self.IFE(x)
+        x = self.SFE(x)
         
         ### stage11
         x11 = x
@@ -254,3 +254,9 @@ class CSFI(nn.Module):
         x_tt = self.merge_tail(x31, x32, x33)
                 
         return x_tt, x33, x32, x31
+    
+    
+    
+
+    
+    
