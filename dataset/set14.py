@@ -33,9 +33,9 @@ class ToTensor(object):
 
 class TestSet(Dataset):
     def __init__(self, args, ref_level='1', transform=transforms.Compose([ToTensor()])):
-        self.input_list    = sorted(glob.glob(os.path.join(args.dataset_dir, '*_HR.png')))
-        self.lr    = sorted(glob.glob(os.path.join(args.dataset_dir, '*_LR.png')))
-        self.lr_sr = sorted(glob.glob(os.path.join(args.dataset_dir, '*_bicubic.png')))
+        self.input_list = sorted(glob.glob(os.path.join(args.dataset_dir, '*_HR.png')))
+        self.lr         = sorted(glob.glob(os.path.join(args.dataset_dir, '*_LR.png')))
+        self.lr_sr      = sorted(glob.glob(os.path.join(args.dataset_dir, '*_bicubic.png')))
 
         self.transform  = transform
         self.filled = 4 * args.stride
@@ -82,5 +82,6 @@ class TestSet(Dataset):
         if self.transform:
             sample = self.transform(sample)
         return sample
+    
     
     
