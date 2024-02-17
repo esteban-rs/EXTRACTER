@@ -100,6 +100,9 @@ class TestSet(Dataset):
 
         if self.transform:
             sample = self.transform(sample)
+            
+            
+        sample['name'] = self.input_list[idx]
         return sample
     
     
