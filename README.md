@@ -4,7 +4,7 @@ Implementation of [Efficient Texture Matching with Attention and Gradient Enhanc
 
 
 
-Pretrained models avaiable at [Extracter-pretrained](https://drive.google.com/file/d/1YDNfA3V_Xxzx1aHejQPtGZxyn2HRHHp2/view?usp=sharing)
+Out pretrained models are avaiable at [Extracter-rec-pretrained](https://drive.google.com/file/d/1n8jLzbQUxWUCmuw2sz17IJa-ubUonCAw/view?usp=sharing) and [Extracter-All-Losses-pretrained](https://drive.google.com/file/d/1C0xT8vJWqdaz8IdtYd8xuxYD3rTAmzNf/view?usp=sharing)
 
 
 
