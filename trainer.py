@@ -3,12 +3,18 @@ from model import Vgg19
 
 import os
 import numpy as np
+from imageio import imread, imsave
+from PIL import Image
+
 import torch 
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision.utils as utils
-from imageio import imread, imsave
+
+
+# TEMPORAL
+from skimage import io
 
 class Trainer():
     def __init__(self, args, logger, dataloader, model, loss_all):
@@ -20,10 +26,18 @@ class Trainer():
         self.device     = torch.device('cpu') if args.cpu else torch.device('cuda')
         self.vgg19      = Vgg19.Vgg19(requires_grad=False).to(self.device)
         
+        if ((not self.args.cpu) and (self.args.num_gpu > 1)):
+            self.vgg19  = nn.DataParallel(self.vgg19, list(range(self.args.num_gpu)))
+
         self.params = [
-            {"params": filter(lambda p: p.requires_grad, self.model.FE.parameters()), "lr": args.lr_rate_lte},
-            {"params": filter(lambda p: p.requires_grad, self.model.CSFI.parameters()), "lr": args.lr_rate},        
-            {"params": filter(lambda p: p.requires_grad, self.model.GDE.parameters()), "lr": args.lr_rate},  
+            {"params": filter(lambda p: p.requires_grad, self.model.SR.parameters() if 
+             args.num_gpu==1 else self.model.module.SR.parameters()),
+             "lr": args.lr_rate
+            },        
+            {"params": filter(lambda p: p.requires_grad, self.model.FE.parameters() if 
+             args.num_gpu==1 else self.model.module.FE.parameters()), 
+             "lr": args.lr_rate_lte
+            },
         ]
         self.optimizer = optim.Adam(self.params, betas=(args.beta1, args.beta2), eps=args.eps)
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, 
@@ -37,14 +51,25 @@ class Trainer():
     def load(self, model_path = None):
         if (model_path):
             self.logger.info('load_model_path: ' + model_path)
-            model_state_dict_save = {k:v for k,v in torch.load(model_path, map_location=self.device).items()}
+            model_state_dict_save = {}
+            for k,v in torch.load(model_path, map_location=self.device).items() :
+                if k.find('MainNet') > -1 :   
+                    k_ = k.replace('MainNet', 'SR')
+                elif k.find('LTE') > -1 : 
+                    k_ = k.replace('LTE', 'FE')
+                else :
+                    k_ = k
+
+                model_state_dict_save[k_] = v
+
             model_state_dict      = self.model.state_dict()
             model_state_dict.update(model_state_dict_save)
             self.model.load_state_dict(model_state_dict, strict = False)
 
     def prepare(self, sample_batched):
         for key in sample_batched.keys():
-            sample_batched[key] = sample_batched[key].to(self.device)
+            if key != 'name' :
+                sample_batched[key] = sample_batched[key].to(self.device)
         return sample_batched
 
     def train(self, current_epoch=0, is_init=False):
@@ -61,18 +86,23 @@ class Trainer():
             hr             = sample_batched['HR']
             ref            = sample_batched['Ref']
             ref_sr         = sample_batched['Ref_sr']
+            
 
-            sr, S    = self.model(lr    = lr, lrsr  = lr_sr, ref   = ref, refsr = ref_sr)
+            sr, S, T_lv3, T_lv2, T_lv1 = self.model(lr    = lr, 
+                                                    lrsr  = lr_sr, 
+                                                    ref   = ref, 
+                                                    refsr = ref_sr)
+            
             # calc loss
-            is_print = ((i_batch + 1) % self.args.print_every == 0) 
+            is_print = ((i_batch + 1) % self.args.print_every == 0) # flag of print
 
             rec_loss = self.args.rec_w * self.loss_all['rec_loss'](sr, hr)
             loss     = rec_loss
+            
             if (is_print):
                 self.logger.info( ('init ' if is_init else '') + 'epoch: ' + str(current_epoch) + 
                     '\t batch: ' + str(i_batch+1) )
                 self.logger.info( 'rec_loss: %.10f' %(rec_loss.item()) )
-                
             if (not is_init):
                 if ('per_loss' in self.loss_all):
                     sr_relu5_1 = self.vgg19((sr + 1.) / 2.)
@@ -92,7 +122,6 @@ class Trainer():
                     loss += adv_loss
                     if (is_print):
                         self.logger.info( 'adv_loss: %.10f' %(adv_loss.item()) )
-                        
             loss.backward()
             self.optimizer.step()
 
@@ -120,7 +149,8 @@ class Trainer():
                     ref    = sample_batched['Ref']
                     ref_sr = sample_batched['Ref_sr']
 
-                    sr, _  = self.model(lr=lr, lrsr=lr_sr, ref=ref, refsr=ref_sr)
+                    sr, _, _, _, _ = self.model(lr=lr, lrsr=lr_sr, ref=ref, refsr=ref_sr)
+
                     if (self.args.eval_save_results):
                         sr_save = (sr+1.) * 127.5
                         sr_save = np.transpose(sr_save.squeeze().round().cpu().numpy(), (1, 2, 0)).astype(np.uint8)
@@ -183,4 +213,5 @@ class Trainer():
 
         self.logger.info('Evaluation over.')
 
+ 
  
