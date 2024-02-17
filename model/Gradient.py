@@ -14,8 +14,8 @@ class gradient(nn.Module):
                     [-2, 0, 2],
                     [-1, 0, 1]]
         
-        kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0).cuda()
-        kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0).cuda()
+        kernel_h = torch.FloatTensor(kernel_h).unsqueeze(0).unsqueeze(0)
+        kernel_v = torch.FloatTensor(kernel_v).unsqueeze(0).unsqueeze(0)
         
         self.weight_h = nn.Parameter(data=kernel_h, requires_grad=False).cuda()
         self.weight_v = nn.Parameter(data=kernel_v, requires_grad=False).cuda()
@@ -37,10 +37,10 @@ class gradient(nn.Module):
         x0 = torch.sqrt(torch.pow(x0_v, 2) + torch.pow(x0_h, 2) + 1e-6)
         x1 = torch.sqrt(torch.pow(x1_v, 2) + torch.pow(x1_h, 2) + 1e-6)
         x2 = torch.sqrt(torch.pow(x2_v, 2) + torch.pow(x2_h, 2) + 1e-6)
-        
+        '''
         x0 = (x0 - x0.min()) / (x0.max() - x0.min())
         x1 = (x1 - x1.min()) / (x1.max() - x1.min())
         x2 = (x2 - x2.min()) / (x2.max() - x2.min())
-        
+        '''
         x = torch.cat([x0, x1, x2], dim=1)
         return x

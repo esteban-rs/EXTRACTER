@@ -2,67 +2,29 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+
 from model import Gradient
+from model.Modules import conv1x1, conv3x3, ResBlock, SFE, MergeTail
 from model.TTSR import CSFI2, CSFI3
-from model.Blocks import conv1x1, conv3x3, ResBlock
 
-class SFE(nn.Module):
-    def __init__(self, num_res_blocks, n_feats, res_scale):
-        super(SFE, self).__init__()
-        self.num_res_blocks = num_res_blocks
-        self.conv_head = conv3x3(3, n_feats)
-        
-        self.RBs = nn.ModuleList()
-        for i in range(self.num_res_blocks):
-            self.RBs.append(ResBlock(in_channels=n_feats, out_channels=n_feats, 
-                res_scale=res_scale))
-            
-        self.conv_tail = conv3x3(n_feats, n_feats)
-        
-    def forward(self, x):
-        x  = F.relu(self.conv_head(x))
-        x1 = x
-        for i in range(self.num_res_blocks):
-            x = self.RBs[i](x)
-        x = self.conv_tail(x)
-        x = x + x1
-        return x
-
-class MergeTail(nn.Module):
-    def __init__(self, n_feats):
-        super(MergeTail, self).__init__()
-        self.conv13     = conv1x1(n_feats, n_feats)
-        self.conv23     = conv1x1(n_feats, n_feats)
-        self.conv_merge = conv3x3(n_feats*3, n_feats)
-        
-    def forward(self, x1, x2, x3):
-        x13 = F.interpolate(x1, scale_factor=4, mode='bicubic')
-        x13 = F.relu(self.conv13(x13))
-        x23 = F.interpolate(x2, scale_factor=2, mode='bicubic')
-        x23 = F.relu(self.conv23(x23))
-
-        x = F.relu(self.conv_merge( torch.cat((x3, x13, x23), dim=1) ))
-        
-        return x
 
 class SR(nn.Module):
     def __init__(self, num_res_blocks, num_grad_blocks, n_feats, res_scale, top_k):
         super(SR, self).__init__()
-        self.num_res_blocks   = num_res_blocks ### a list containing number of resblocks of different stages
+        self.num_res_blocks   = num_res_blocks 
         self.num_res_blocks_g = num_grad_blocks
 
         self.n_feats        = n_feats
         self.SFE            = SFE(self.num_res_blocks[0], n_feats, res_scale)
         self.SFE_GRAD       = SFE(self.num_res_blocks_g[0], n_feats, res_scale)
-        
         self.gradient       = Gradient.gradient()
         self.top_k          = top_k
+        self.feature_levels = [256, 128, 64]
 
         ### stage11
-        # self.conv11_head = conv3x3(256 + n_feats, n_feats)
         self.conv11_head = nn.ModuleList()
         for i in range(top_k):
-            self.conv11_head.append(conv3x3(256 + n_feats, n_feats))
+            self.conv11_head.append(conv3x3(self.feature_levels[0] + n_feats, n_feats))
 
         self.RB11        = nn.ModuleList()
         for i in range(self.num_res_blocks[1]):
@@ -75,13 +37,10 @@ class SR(nn.Module):
         self.conv12      = conv3x3(n_feats, n_feats*4)
         self.ps12        = nn.PixelShuffle(2)
 
-        ### stage21, 22
-        #self.conv21_head = conv3x3(n_feats, n_feats)
-        #self.conv22_head = conv3x3(128+n_feats, n_feats)
-        
+        ### stage21, 22        
         self.conv22_head = nn.ModuleList()
         for i in range(top_k):
-            self.conv22_head.append(conv3x3(128 + n_feats, n_feats))
+            self.conv22_head.append(conv3x3(self.feature_levels[1] + n_feats, n_feats))
             
         self.ex12        = CSFI2(n_feats)
 
@@ -103,13 +62,9 @@ class SR(nn.Module):
         self.ps23        = nn.PixelShuffle(2)
 
         ### stage31, 32, 33
-        #self.conv31_head = conv3x3(n_feats, n_feats)
-        #self.conv32_head = conv3x3(n_feats, n_feats)
-        
-        # self.conv33_head = conv3x3(64 + n_feats, n_feats)
         self.conv33_head = nn.ModuleList()
         for i in range(top_k):
-            self.conv33_head.append(conv3x3(64 + n_feats, n_feats))
+            self.conv33_head.append(conv3x3(self.feature_levels[2] + n_feats, n_feats))
 
         self.ex123 = CSFI3(n_feats)
 
@@ -149,9 +104,7 @@ class SR(nn.Module):
         for i in range(self.num_res_blocks_g[3]):
             self.grad_33.append(ResBlock(in_channels  = n_feats, 
                                       out_channels = n_feats))
-                                      
-        
-
+                                    
         self.fuse        = conv3x3(2 * n_feats, n_feats)
                                 
         self.fuse_tail1 = conv3x3(n_feats, n_feats//2)
@@ -185,18 +138,16 @@ class SR(nn.Module):
 
     def forward(self, x,  S = None, T_lv3 = None, T_lv2 = None, T_lv1 = None):
         ### shallow feature extraction
-        g = self.gradient((x + 1)*127.5)
-        # g = self.gradient((x + 1)/2)
+        g = self.gradient((x + 1) / 2)
 
         x = self.SFE(x)
 
         ### stage11
         x11 = x
-        
+
         ### soft-attention
         f_lv1 = x11
         for i in range(len(T_lv3)) :
-            scale_factor = f_lv1.shape[2] // S[i].shape[2]
             S1           = F.interpolate(S[i], size= (f_lv1.shape[2], f_lv1.shape[3]), mode='bicubic')
             x11_res      = torch.cat((f_lv1, T_lv3[i] * S1), dim = 1)
             x11_res      = self.conv11_head[i](x11_res) * S1
@@ -213,17 +164,17 @@ class SR(nn.Module):
         x21_res = x21
         x22     = self.conv12(x11)
         x22     = F.relu(self.ps12(x22))
-        
+
         ### soft-attention
         f_lv2 = x22
         for i in range(len(T_lv3)) :
-            scale_factor = f_lv2.shape[2] // S[i].shape[2]
             S2           = F.interpolate(S[i], size = (f_lv2.shape[2], f_lv2.shape[3]), mode='bicubic')
             x22_res      = torch.cat((f_lv2, T_lv2[i] * S2), dim=1)
             x22_res      = self.conv22_head[i](x22_res) * S2 
             x22          = x22 + x22_res        
         x22_res = x22
-
+        
+        
         x21_res, x22_res = self.ex12(x21_res, x22_res)
         
 
@@ -243,10 +194,9 @@ class SR(nn.Module):
         x32_res = x32
         x33     = self.conv23(x22)
         x33     = F.relu(self.ps23(x33))
-        
+
         f_lv3 = x33
         for i in range(len(T_lv3)) :
-            scale_factor = f_lv3.shape[2] // S[i].shape[2]
             S3           = F.interpolate(S[i], size= (f_lv3.shape[2], f_lv3.shape[3]), mode='bicubic')
             x33_res      = torch.cat((f_lv3, T_lv1[i] * S3), dim=1)
             x33_res      = self.conv33_head[i](x33_res) * S3
@@ -264,22 +214,16 @@ class SR(nn.Module):
         x32_res = self.conv32_tail(x32_res)
         x33_res = self.conv33_tail(x33_res)
         
-        x31 = x31 + x31_res
-        x32 = x32 + x32_res
-        x33 = x33 + x33_res
+        T1 = x31 + x31_res
+        T2 = x32 + x32_res
+        T3 = x33 + x33_res
 
-        T1 = x31
-        T2 = x32
-        T3 = x33
-        
-        
         x_tt = self.merge_tail(T1, T2, T3)   
  
         x_grad = self.SFE_GRAD(g)
                 
         # fuse level 1
         x_grad1 = torch.cat([x_grad, T1], dim = 1)
-        #x_grad1 = self.conv12_grad(x_grad1)
         x_grad1 = F.relu(self.conv12_grad(x_grad1))
 
         x_grad1_res = x_grad1
@@ -290,7 +234,6 @@ class SR(nn.Module):
         # fuse level 2
         x_grad1 = F.interpolate(x_grad1, scale_factor = 2, mode='bicubic')
         x_grad2 = torch.cat([x_grad1, T2], dim = 1)
-        #x_grad2 = self.conv23_grad(x_grad2)
         x_grad2 = F.relu(self.conv23_grad(x_grad2))
 
         x_grad2_res = x_grad2
@@ -301,14 +244,13 @@ class SR(nn.Module):
         # fuse level 3
         x_grad2 = F.interpolate(x_grad2, scale_factor = 2, mode='bicubic')
         x_grad3 = torch.cat([x_grad2, T3], dim = 1)
-        #x_grad3 = self.conv33_grad(x_grad3)
         x_grad3 = F.relu(self.conv33_grad(x_grad3))
 
         x_grad3_res = x_grad3
         for i in range(self.num_res_blocks_g[3]):
             x_grad3_res = self.grad_33[i](x_grad3_res)
         x_grad3 = x_grad3 + x_grad3_res
-        
+                
         x_cat = torch.cat([x_tt, x_grad3], dim = 1)
         x_cat = F.relu(self.fuse(x_cat))
         
@@ -316,3 +258,6 @@ class SR(nn.Module):
         x_cat = self.fuse_tail2(x_cat)
         
         return torch.clamp(x_cat, -1, 1)  
+    
+    
+    
