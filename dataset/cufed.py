@@ -5,6 +5,7 @@ import numpy as np
 import glob
 import random
 import cv2
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,6 +16,7 @@ import torchvision.transforms as T
 # Ignore warnings
 import warnings
 warnings.filterwarnings("ignore")
+
 
 
 class RandomRotate(object):
@@ -75,7 +77,7 @@ class TrainSet(Dataset):
         return len(self.input_list)
 
     def __getitem__(self, idx):
-        # swap [HR, Ref] for dataset augmentation as https://github.com/dvlab-research/MASA-SR/tree/main
+        ### HR
         if random.random() < 0.5 :  
             HR      = imread(self.input_list[idx])
             Ref = imread(self.ref_list[idx])
@@ -83,7 +85,8 @@ class TrainSet(Dataset):
             Ref = imread(self.input_list[idx])
             HR  = imread(self.ref_list[idx])
             
-        # fill borders to batch > 1
+            
+            
         h, w, c = Ref.shape
         if h % 16 != 0 or w % 16 != 0:
             h_new = np.math.ceil(h / 16) * 16
@@ -96,22 +99,27 @@ class TrainSet(Dataset):
             w_new = np.math.ceil(w / 16) * 16
             HR = cv2.copyMakeBorder(HR, 0, h_new - h, 0, w_new - w, cv2.BORDER_REPLICATE)
             
+        h,w = HR.shape[:2]
+        #HR = HR[:h//4*4, :w//4*4, :]
+
         ### LR and LR_sr
-        h,w   = HR.shape[:2]
         LR    = np.array(Image.fromarray(HR).resize((w//4, h//4), Image.BICUBIC))
         LR_sr = np.array(Image.fromarray(LR).resize((w, h), Image.BICUBIC))
+
         ### Ref and Ref_sr
-        h2, w2 = Ref.shape[:2]
+        h2, w2     = Ref.shape[:2]
         Ref_sr = np.array(Image.fromarray(Ref).resize((w2//4, h2//4), Image.BICUBIC))
         Ref_sr = np.array(Image.fromarray(Ref_sr).resize((w2, h2), Image.BICUBIC))
-        
+    
+
+
         ### change type
         LR     = LR.astype(np.float32)
         LR_sr  = LR_sr.astype(np.float32)
         HR     = HR.astype(np.float32)
         Ref    = Ref.astype(np.float32)
         Ref_sr = Ref_sr.astype(np.float32)
-        
+
         ### rgb range to [-1, 1]
         LR     = LR / 127.5 - 1.
         LR_sr  = LR_sr / 127.5 - 1.
@@ -183,4 +191,7 @@ class TestSet(Dataset):
             sample = self.transform(sample)
         return sample
     
+    
+    
+
     
